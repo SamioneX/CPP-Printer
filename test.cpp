@@ -158,3 +158,61 @@ int main() {
     // --> so::print(54.4, suffix="//\n", 1);    //compiler error
     //--> so::print(A{});
 }
+
+/* OUTPUT: 
+
+============================= Basic Types =============================
+
+bool{} : false
+int{} : 0
+"hello" : hello
+cstr : hello
+std::string{"world"} : world
+
+============================= Collections =============================
+
+arr : {1, 2, 3, 4, 5}
+std::initializer_list<int>{5, 6, 7} : {5, 6, 7}
+std::string{"world"} : world
+std::unordered_map<char, size_t>{{'c', 3}, {'x', 5}} : {(c, 3), (x, 5)}
+2D structure:
+std::vector<std::vector<int>>{{2, 3}, {4, 5}} : {{2, 3}, {4, 5}}
+3D structure:
+std::vector<std::set<std::vector<int>>>{{{1, 2}, {3, 4}}, {}} : {{{1, 2}, {3, 4}}, {}}
+List of tuples:
+std::vector<std::pair<double, double>>{{1.0, 1.5}, {3.4, 9.6}} : {(1, 1.5), (3.4, 9.6)}
+
+============================= Tuples =============================
+
+std::tuple<bool, double, std::string>(false, 4.5, "hello") : (false, 4.5, hello)
+std::array<int, 3>{9, -13, 2} : (9, -13, 2)
+std::pair<size_t, std::vector<char>>{10, {'x', 'b', 'y'}} : (10, {x, b, y})
+
+============================= Variant =============================
+
+std::variant<int, double, std::string>("my_variant") : my_variant
+
+============================= Optional =============================
+
+std::optional<int>(6) : Some(6)
+std::optional<int>{} : None
+
+============================= Any =============================
+
+std::any{49.7} : 49.7
+Joined elems: "9, apple, candle, 84.6, c, 3738092, nullptr"
+Before adding std::array<int, 2> to registry:
+std::any{std::array<int, 2>{3, 4}} : (Unknown Type)
+After adding std::array<int, 2> to registry:
+std::any{std::array<int, 2>{3, 4}} : (3, 4)
+std::any{A{}} : (Unknown Type)
+
+============================= print() =============================
+
+{2, 3} hello
+{2, 3}--hello
+**1, a, world, 4.5**
+{2, 3}--hello
+{6, 8}
+
+*/
