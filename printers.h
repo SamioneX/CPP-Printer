@@ -1,12 +1,18 @@
 #ifndef SO_PRINTER_H
 #define SO_PRINTER_H
 
-#include <vector>
-#include <set>
-#include <tuple>
-#include <type_traits>
-#include <array>
 #include <iostream>
+#include "type_traits/has_op.h"
+#include "type_traits/logical.h"
+#include "type_traits/is_tuple_like.h"
+#include "type_traits/is_iterable.h"
+#include "type_traits/is_in.h"
+#include "type_traits/index_of.h"
+#include "type_traits/all.h"
+#include "type_traits/split_at.h"
+
+#include <tuple>
+
 #if __has_include(<optional>)
 #include <optional>
 #endif
@@ -19,192 +25,61 @@
 #include <typeindex>
 #endif
 
+#if __cpp_if_constexpr
+#define IFC if constexpr
+#else
+#define IFC if
+#endif
+
+#ifndef SO_ANY_REGISTRY_STORAGE
+#define SO_ANY_REGISTRY_STORAGE
+#endif
+
+#ifndef SO_PRINT_STORAGE
+#define SO_PRINT_STORAGE
+#endif
+
+#if __cpp_inline_variables
+#define INLINE_PRINT SO_PRINT_STORAGE inline
+#define INLINE_REG SO_ANY_REGISTRY_STORAGE inline
+#else
+#define INLINE_PRINT SO_PRINT_STORAGE
+#define INLINE_REG SO_ANY_REGISTRY_STORAGE
+#endif
 
 namespace so {
-#define print(T) so::write(std::cout, T)
-#define println(T) (so::write(std::cout, T), std::cout << '\n')
-#define writeln(is, T) (write(is, T), is << '\n')
-
     namespace details {
-#ifdef __cpp_lib_void_t
-        using std::void_t;
-#else
-        template<typename... Ts> struct make_void { typedef void type;};
-    template<typename... Ts> using void_t = typename make_void<Ts...>::type;
-#endif
-
-#ifdef __cpp_lib_remove_cvref
-        using std::remove_cvref;
-#else
-        template< class T >
-struct remove_cvref {
-    typedef typename std::remove_cv<typename std::remove_reference<T>::type>::type type;
-};
-#endif
-
-#ifdef __cpp_lib_logical_traits
-        using std::conjunction;
-#else
-        template<class...> struct conjunction : std::true_type { };
-template<class B1> struct conjunction<B1> : B1 { };
-template<class B1, class... Bn>
-struct conjunction<B1, Bn...>
-        : std::conditional<bool(B1::value), conjunction<Bn...>, B1>::type {};
-#endif
-
-#define BOOL(v) std::integral_constant<bool, v>
-
-#define CONJ(...) details::conjunction<__VA_ARGS__>::value
-#define ENABLE_IF(b) typename std::enable_if<b>::type* = nullptr
-#define ENABLE_IF_V(...) ENABLE_IF(CONJ(__VA_ARGS__))
-
-        struct dont_care {};
-
-        template <class T> struct dont_care2 : std::true_type {};
-
-#define MAKE_BINARY_OP_CHECKER(NAME, OP) \
-    template <typename LHS, typename RHS, typename Ret = dont_care, typename = void> \
-    struct NAME : std::false_type {}; \
-    \
-    template <typename LHS, typename RHS, typename Ret> \
-    struct NAME<LHS, RHS, Ret, void_t<decltype(std::declval<LHS&>() OP std::declval<RHS&>())>> \
-            : std::is_same<Ret, typename remove_cvref<decltype(std::declval<LHS>() != std::declval<RHS&>())>::type > {}; \
-    \
-    template <typename LHS, typename RHS> \
-    struct NAME<LHS, RHS, dont_care, void_t<decltype(std::declval<LHS&>() OP std::declval<RHS&>())>> \
-            : std::true_type {};
-
-#define MAKE_UNARY_OP_CHECKER(NAME, OP) \
-    template <typename T, typename Ret = dont_care, typename = void> \
-    struct NAME : std::false_type {}; \
-    \
-    template <typename T, typename Ret> \
-    struct NAME <T, Ret, void_t<decltype(OP std::declval<T&>())>> \
-            : std::is_same<Ret, typename remove_cvref<decltype(OP std::declval<T&>())>::type > {}; \
-    \
-    template <typename T> \
-    struct NAME <T, dont_care, void_t<decltype(OP std::declval<T&>())>> \
-            : std::true_type {};
-
-        MAKE_BINARY_OP_CHECKER(has_not_equal_to, !=)
-        MAKE_UNARY_OP_CHECKER(has_pre_increment, ++)
-        MAKE_UNARY_OP_CHECKER(has_deref, *)
-
-        template <class T>
-        struct is_input_iterator : conjunction<has_pre_increment<T>, has_deref<T>> {};
-
-        template <typename T, typename = void>
-        struct is_iterable : std::false_type {};
-
-        template <typename T>
-        struct is_iterable<T, void_t<decltype(std::begin(std::declval<T&>())), decltype(std::end(std::declval<T&>()))>>
-                :conjunction<
-                        is_input_iterator<decltype(std::begin(std::declval<T&>()))>,
-                        has_not_equal_to<decltype(std::begin(std::declval<T&>())), decltype(std::end(std::declval<T&>())), bool>
-                > {};
-
-        template <typename T, typename = void>
-        struct is_tuple_like : std::false_type {};
-
-        template <typename T>
-        struct is_tuple_like<T, void_t<
-                decltype(std::get<std::tuple_size<T>::value - 1>(std::declval<T&>()))>>
-                : std::true_type{};
-
-        template<class T> std::ostream& write_impl(std::ostream& os, const T&);
-
-        template <typename T, typename = void>
-        struct is_basic_printable : std::false_type {};
-
-        template <typename T>
-        struct is_basic_printable<T, void_t<
-                decltype(std::declval<std::ostream&>() << std::declval<T&>())>>
-                : std::true_type{};
-
-        template<typename T, typename = void> struct is_printable : std::false_type {};
-
-    }
-
-    // prints type which have the ostream operator
-    template<class T, ENABLE_IF_V(details::is_basic_printable<T>,
-                                  BOOL(!std::is_array<T>::value))>
-    inline std::ostream& write(std::ostream& os, const T& val) {
-        return os << val;
-    }
-
-// specialization string literals, so that the overload below is not called.
-    inline std::ostream& write(std::ostream& os, const char* val) {
-        return os << val;
-    }
-
-    namespace details {
-#define NO_BASIC_T(T, ...) ENABLE_IF_V(__VA_ARGS__, BOOL(!details::is_basic_printable<T>::value))
-#define NO_BASIC(...) NO_BASIC_T(T, __VA_ARGS__)
+        template<class T> void write_impl(std::ostream& os, const T&);
 
         template<typename T, bool is_tuple = is_tuple_like<T>::value>
-        struct is_printable_tuple : std::false_type {
-        };
+        struct is_printable_tuple : std::false_type {};
 
-        template<size_t I, size_t N, typename T>
-        struct tuple_printer {
-            static inline void do_print(std::ostream &os, const T &val) {
-                os << ", ";
-                write_impl(os, std::get<I>(val));
-                tuple_printer<I + 1, N, T>::do_print(os, val);
-            }
-        };
+        template<std::size_t> struct Index{};
 
-        template<size_t N, typename T>
-        struct tuple_printer<0, N, T> {
-            static inline void do_print(std::ostream &os, const T &val) {
-                write_impl(os, std::get<0>(val));
-                tuple_printer<1, N, T>::do_print(os, val);
-            }
-        };
+        template <size_t END, class Tuple, size_t Idx, ENABLE_IF(Idx != END)>
+        void print_tuple(std::ostream& out, const Tuple& t, Index<Idx>, const char* sep) {
+            write_impl(out, std::get<Idx>(t));
+            out << sep;
+            print_tuple<END>(out, t, Index<Idx + 1>{}, sep);
+        }
 
-        template<size_t N, typename T>
-        struct tuple_printer<N, N, T> {
-            static inline void do_print(std::ostream &os, const T &val) {
-                os << ')';
-            }
-        };
-    }
+        template <size_t END, class Tuple>
+        inline void print_tuple(std::ostream& out, const Tuple& t, Index<END-1>, const char*) {
+            write_impl(out, std::get<END-1>(t));
+        }
 
-//overload fpr tuple-like types
-    template <class T, NO_BASIC(details::is_printable_tuple<T>)>
-    inline std::ostream& write(std::ostream& os, const T& val) {
-        os << '(';
-        details::tuple_printer<0, std::tuple_size<T>::value, T>::do_print(os, val);
-        return os;
-    }
+        template <size_t END, class Tuple>
+        inline void print_tuple(std::ostream&, const Tuple&, Index<END>, const char*) {}
 
-#if __cpp_lib_optional
-    template<class T, NO_BASIC_T(std::optional<T>,  details::is_printable<T>)>
-    inline std::ostream& write(std::ostream& os, const std::optional<T>& opt) {
-        if (opt.has_value())
-            return details::write_impl(os << "Some(", opt.value()) << ')';
-        else
-            return os << "None";
-    }
-#endif
-
-#if __cpp_lib_variant && __cpp_generic_lambdas
-    template<class... Ts, NO_BASIC_T(std::variant<Ts...>,details::is_printable<Ts>...)>
-    inline std::ostream& write(std::ostream& os, const std::variant<Ts...>& var) {
-        std::visit([&](auto&& arg) { details::write_impl(os, arg); }, var);
-        return os;
-    }
-#endif
-    namespace details {
 #if __cpp_lib_any
-        template<class T> std::ostream& any_writer(std::ostream& os, const std::any& a) {
-            return write_impl(os, std::any_cast<T>(a));
+        template<class T> void any_writer(std::ostream& os, const std::any& a) {
+            write_impl(os, std::any_cast<T>(a));
         }
 
 #define WRITER_PAIR(T) {std::type_index(typeid(T)), &details::any_writer<T>}
 #define WRITER_PAIR_U(T) WRITER_PAIR(T), WRITER_PAIR(unsigned T)
 
-        inline std::unordered_map<std::type_index, std::ostream& (*)(std::ostream&, const std::any&)> any_writer_map = {
+        INLINE_REG std::unordered_map<std::type_index, void(*)(std::ostream&, const std::any&)> any_writer_map = {
                 WRITER_PAIR_U(char),
                 WRITER_PAIR(bool),
                 WRITER_PAIR_U(short),
@@ -224,8 +99,54 @@ struct conjunction<B1, Bn...>
 #endif
     }
 
+    template<typename T, typename = void> struct is_printable : std::false_type {};
+
+#define NOT(...) negation<__VA_ARGS__>
+#define AND(...) conjunction<__VA_ARGS__>
+#define OR(...) disjunction<__VA_ARGS__>
+#define DPR(...) has_left_shift<std::ostream&, __VA_ARGS__>     //default printer
+#define PR(...) is_printable<__VA_ARGS__>
+#define ARR(...) std::is_array<__VA_ARGS__>
+
+    // prints type which have the ostream operator
+    template<class T, ENABLE_IF_V(DPR(T), NOT(ARR(T)))>
+    inline void write(std::ostream& os, const T& val) {
+        os << val;
+    }
+
+    // specialization string literals, so that the overload below is not called.
+    inline void write(std::ostream& os, const char* val) {
+        os << val;
+    }
+
+    //overload fpr tuple-like types including.
+    template <class T, ENABLE_IF_V(NOT(DPR(T)), details::is_printable_tuple<T>)>
+    inline void write(std::ostream& os, const T& val) {
+        os << '(';
+        details::print_tuple<std::tuple_size<T>::value>(os, val, details::Index<0>{}, ", ");
+        os << ')';
+    }
+
+#if __cpp_lib_optional
+    template<class T, ENABLE_IF_V(NOT(DPR(std::optional<T>)), PR(T))>
+    inline void write(std::ostream& os, const std::optional<T>& opt) {
+        if (opt.has_value()) {
+            details::write_impl(os << "Some(", opt.value());
+            os << ')';
+        }
+        else os << "None";
+    }
+#endif
+
+#if __cpp_lib_variant && __cpp_generic_lambdas
+    template<class... Ts, ENABLE_IF_V(NOT(DPR(std::variant<Ts...>)), PR(Ts)...)>
+    inline void write(std::ostream& val, const std::variant<Ts...>& var) {
+        std::visit([&](auto&& arg) { details::write_impl(val, arg); }, var);
+    }
+#endif
+
 #if __cpp_lib_any
-    template<class T, ENABLE_IF_V(details::is_printable<T>)>
+    template<class T, ENABLE_IF_V(PR(T))>
     inline void add_any_writer() {
         details::any_writer_map.insert(WRITER_PAIR(T));
     }
@@ -233,32 +154,32 @@ struct conjunction<B1, Bn...>
     template<class T>
     inline void try_add_any_writer() {
 #if __cpp_if_constexpr
-        if constexpr (details::is_printable<T>::value)
+        if constexpr (PR(T)::value)
             details::any_writer_map.insert(WRITER_PAIR(T));
 #else
         if (is_printable<T>::value)
             details::any_writer_map.insert(WRITER_PAIR(T));
 #endif
     }
+#undef WRITER_PAIR
+#undef WRITER_PAIR_U
 
-    template<class T, ENABLE_IF_V(std::is_same<std::any, typename details::remove_cvref<T>::type>)>
-    inline std::ostream& write(std::ostream& os, const T& a) {
+    template<class T, ENABLE_IF_V(std::is_same<std::any, typename remove_cvref<T>::type>)>
+    inline void write(std::ostream& os, const T& a) {
         auto it = details::any_writer_map.find(std::type_index(a.type()));
         if (it == details::any_writer_map.end()) {
-            return os << "(Unknown Type)";
+            os << "(Unknown Type)";
         }else {
-            return it->second(os, a);
+            it->second(os, a);
         }
     }
 #endif
 
-    // we want to print only types that are iterable, including arrays and whose value_type is printable.
-// we do not want to print types which have the ostream output operator defined or tuple-like types.
-// Those types should use their output operator.
-    template<class T, ENABLE_IF_V(details::is_iterable<T>, BOOL(std::is_array<T>::value ||
-                                                                (!details::is_basic_printable<T>::value && !details::is_tuple_like<T>::value)),
-                                  details::is_printable<decltype(*std::begin(std::declval<T&>()))>)>
-    inline std::ostream& write(std::ostream& os, const T& coll) {
+    // we want to print only types that are iterable, not tuple-like,
+    // is an array or is not DPR. Arrays in c++ are implicitly convertible to pointers
+    // which are DPR. So we have to check for this.
+    template<class T, ENABLE_IF_V(is_iterable<T>, OR(ARR(T), NOT(DPR(T))), NOT(is_tuple_like<T>))>
+    inline void write(std::ostream& os, const T& coll) {
         auto start = std::begin(coll);
         auto stop = std::end(coll);
         os << '{';
@@ -268,17 +189,17 @@ struct conjunction<B1, Bn...>
                 os << ", "; details::write_impl(os, *start);
             }
         }
-        return os << '}';
+        os << '}';
     }
+
+    template <typename T>
+    struct is_printable<T, void_t<decltype(write(std::cout, std::declval<T&>()))>> : std::true_type {};
 
     namespace details {
         template<class T>
-        inline std::ostream& write_impl(std::ostream& os, const T& v) {
+        inline void write_impl(std::ostream& os, const T& v) {
             return write(os, v);
         }
-
-        template <typename T>
-        struct is_printable<T, void_t<decltype(print(std::declval<T&>()))>> : std::true_type {};
 
         template <size_t N, typename T>
         struct is_printable_tuple_impl {
@@ -295,7 +216,7 @@ struct conjunction<B1, Bn...>
         struct is_printable_tuple<T, true> : is_printable_tuple_impl<std::tuple_size<T>::value-1, T> {};
     }
 
-    template <class T, class Ch = char, class Tr = std::char_traits<Ch>>
+    template <class T = void, class Ch = char, class Tr = std::char_traits<Ch>>
     class ostream_iterator {
     public:
         using iterator_category = std::output_iterator_tag;
@@ -308,21 +229,25 @@ struct conjunction<B1, Bn...>
         using traits_type  = Tr;
         using ostream_type = std::basic_ostream<Ch, Tr>;
 
+        virtual void write(const T& val) {
+            so::write(*os, val);
+        }
+
         explicit ostream_iterator(ostream_type& o) : os(std::addressof(o)) {}
 
-        virtual ostream_iterator& operator=(const T& val) { // insert value into output stream, followed by delimiter
-            write(*os, val);
+        inline ostream_iterator& operator=(const T& val) { // insert value into output stream, followed by delimiter
+            write(val);
             return *this;
         }
 
 #if __has_cpp_attribute(nodiscard)
         [[nodiscard]]
 #endif
-        ostream_iterator& operator*() { return *this; }
+        inline ostream_iterator& operator*() { return *this; }
 
-        ostream_iterator& operator++() { return *this; }
+        inline ostream_iterator& operator++() { return *this; }
 
-        ostream_iterator<T, Ch, Tr>  operator++(int) { return *this; }
+        inline ostream_iterator<T, Ch, Tr>  operator++(int) { return *this; }
 
     protected:
         ostream_type* os; // pointer to output stream
@@ -334,10 +259,9 @@ struct conjunction<B1, Bn...>
     public:
         ostream_iterator_delim(typename base::ostream_type &o, const Ch *delim) : base(o), delim(delim) {}
 
-        ostream_iterator_delim& operator=(const T& val) override { // insert value into output stream, followed by delimiter
-            write(*this->os, val);
+        void write(const T& val) override {
+            so::write(*this->os, val);
             *this->os << delim;
-            return *this;
         }
 
     protected:
@@ -349,34 +273,120 @@ struct conjunction<B1, Bn...>
         using base = ostream_iterator<T, Ch, Tr>;
     public:
         ostream_iterator_sep(typename base::ostream_type &o, const Ch *sep)
-        : base(o), sep(sep), done_first(false) {}
+                : base(o), sep(sep), done_first(false) {}
 
-        ostream_iterator_sep& operator=(const T& val) override { // insert value into output stream, followed by delimiter
+        void write(const T& val) override {
             if (done_first) {
                 *this->os << sep;
             }else {
                 done_first = true;
             }
-            write(*this->os, val);
-            return *this;
+            so::write(*this->os, val);
         }
 
     protected:
         const Ch* sep; // pointer to delimiter string
         bool done_first;
     };
-};
-using so::write;
 
-#undef ENABLE_IF
-#undef ENABLE_IF_V
-#undef BOOL
-#undef CONJ
-#undef MAKE_BINARY_OP_CHECKER
-#undef MAKE_UNARY_OP_CHECKER
-#undef NO_BASIC
-#undef NO_BASIC_T
-#undef WRITER_PAIR
-#undef WRITER_PAIR_U
+    namespace details {
+        template <class T, typename = void>
+        struct is_str_type : std::false_type {};
+
+        template <class T>
+        struct is_str_type<T, void_t<decltype(std::declval<T&>().data())>>
+                : std::is_convertible<decltype(std::declval<T&>().data()), const char*> {};
+    }
+
+    struct flush_t {
+        bool val;
+        flush_t operator=(bool v) const { return flush_t{v}; }
+    };
+
+    struct sep_t {
+        const char* val;
+        sep_t operator=(const char* s) const { return sep_t{s}; }
+
+        template<class T, ENABLE_IF_V(details::is_str_type<T>)>
+        sep_t operator=(const T& s) const { return sep_t{s.data()}; }
+    };
+
+    struct prefix_t {
+        const char* val;
+        prefix_t operator=(const char* s) const { return prefix_t{s}; }
+
+        template<class T, ENABLE_IF_V(details::is_str_type<T>)>
+        prefix_t operator=(const T& s) const { return prefix_t{s.data()}; }
+    };
+
+    struct suffix_t {
+        const char* val;
+        suffix_t operator=(const char* s) const { return suffix_t{s}; }
+
+        template<class T, ENABLE_IF_V(details::is_str_type<T>)>
+        suffix_t operator=(const T& s) const { return suffix_t{s.data()}; }
+    };
+
+    struct stream_t {
+        std::ostream* val;
+        stream_t operator=(std::ostream& v) const { return stream_t{&v}; }
+    };
+
+    namespace details {
+        struct has_kwarg {
+            template<class T>
+            using apply = is_in<typename remove_cvref<T>::type , sep_t, suffix_t, prefix_t, stream_t, flush_t>;
+        };
+
+        struct is_printable_fun {
+            template<class T>
+            using apply = is_printable<T>;
+        };
+    }
+
+    INLINE_PRINT flush_t flush{false};
+    INLINE_PRINT sep_t sep{" "};
+    INLINE_PRINT suffix_t suffix{"\n"};
+    INLINE_PRINT prefix_t prefix{""};
+    INLINE_PRINT stream_t stream{&std::cout};
+
+    template<class T, class Tpl, size_t I, size_t N>
+    constexpr inline T get_arg(const Tpl& tpl, T, details::Index<I>, details::Index<N>) {
+        return std::get<I>(tpl).val;
+    }
+
+    template<class T, class Tpl, size_t N>
+    constexpr inline T get_arg(const Tpl& tpl, T kwarg, details::Index<N>, details::Index<N>) {
+        return kwarg;
+    }
+
+    template <class... Ts,
+            size_t I = index_of_fun<details::has_kwarg, Ts...>::value,
+            size_t N = sizeof...(Ts),
+            class SP = split_at<I, Ts...>, ENABLE_IF_V(
+                    all_of_in<details::has_kwarg, typename SP::right>,
+                    all_unique_in<typename SP::right>,
+                    all_of_in<details::is_printable_fun, typename SP::left>)>
+    constexpr inline void print(Ts&&... ts) {
+        auto tpl = std::forward_as_tuple(ts...);
+#define IKWARG(t) I + index_of_in<t, typename SP::right>::value
+#define IDX(v) details::Index<v>{}
+
+        auto& _stream = *get_arg(tpl, stream.val, IDX(IKWARG(stream_t)), IDX(N));
+
+        details::print_tuple<std::tuple_size<typename SP::left>::value>(
+                _stream << get_arg(tpl, prefix.val, IDX(IKWARG(prefix_t)), IDX(N)),
+                tpl, IDX(0), get_arg(tpl, sep.val, IDX(IKWARG(sep_t)), IDX(N)));
+
+        _stream << get_arg(tpl, suffix.val, IDX(IKWARG(suffix_t)), IDX(N));
+        if (get_arg(tpl, flush.val, IDX(IKWARG(flush_t)), IDX(N)))
+            _stream.flush();
+
+#undef IKWARG
+#undef IDX
+    }
+
+}
+
 
 #endif //SO_PRINTER_H
